@@ -118,7 +118,7 @@ class ConfigurationPart:
         else:
             return
 
-    def get_sub_config(self, name: str, is_nested = False, required = False) -> typing.Union["ConfigurationPart", None]:
+    def get_sub_config(self, name: str, is_nested = False, required = False) -> "ConfigurationPart":
         val = self.__args.get(name)
 
         if val:
@@ -128,7 +128,7 @@ class ConfigurationPart:
         elif required:
             raise ValueError(f"Sub-config '{name}' was not found!")
         else:
-            return None
+            return empty()
 
 def from_file(path: str, base_config: ConfigurationPart = None, options: ConfigurationOptions = None) -> ConfigurationPart:
     if not options:
@@ -176,3 +176,6 @@ def from_args(args: argparse.Namespace, options: ConfigurationOptions = None) ->
     config = ConfigurationPart(vars(args), ".", base_config, options)
 
     return config
+
+def empty() -> ConfigurationPart:
+    return ConfigurationPart(dict(), ".")
