@@ -48,17 +48,33 @@ class ConfigurationPart:
         else:
             return None  
 
-    def get_dict_value(self, name: str, required = False) -> dict:
+    def get_dict_value(self, name: str, required = False) -> dict or None:
+        base_dict = self.__base_config.get_dict_value(name, required=False) if self.__base_config else None
+        
         raw = self.get_raw_value(name, required=required)
 
-        if isinstance(raw, dict):
+        if raw is None:
+            if base_dict:
+                return base_dict
+
+            if required:
+                raise ValueError(f"Value for configuration property '{name}' was not found!")
+            
+            return None
+
+        if isinstance(raw, str):
+            path = self._file_name_to_path(raw)
+
+            with open(path, "r") as fp:
+                raw = json.load(fp)
+
+        if base_dict:
+            base_dict.update(raw)
+            return base_dict
+        else:
             return raw
 
-        path = self._file_name_to_path(raw)
-
-        with open(path, "r") as fp:
-            return json.load(fp)
-
+        
     def get_value(self, name: str, dtype: typing.Type[GetValueType] = str, required = False) -> GetValueType:
         val = self.get_raw_value(name, required=required)
 
@@ -93,42 +109,55 @@ class ConfigurationPart:
         else:
             return None
 
-    def _get_sub_config_from_value(self, val: dict or str, is_nested = False) -> "ConfigurationPart":
-        base_config = self if is_nested else None
-
+    def _get_sub_config_from_value(self, val: dict or str, base_sub_config: "ConfigurationPart" = None) -> "ConfigurationPart":
         if isinstance(val, str):
             path = self._file_name_to_path(val)
 
-            return from_file(path, base_config, options=self.__options)
+            return from_file(path, base_sub_config, options=self.__options)
         elif isinstance(val, dict):
-            return ConfigurationPart(val, self.__dir, self.__base_config)
+            return ConfigurationPart(val, self.__dir, base_sub_config)
         else:
             raise ValueError()
 
-    def get_multi_sub_config(self, name: str, is_nested = False, required = False) -> typing.Generator["ConfigurationPart", None, None]:
+    def _get_multi_sub_config(self, name: str, required = False, base: "ConfigurationPart" = None) -> typing.Generator["ConfigurationPart", None, None]:
         val = self.__args.get(name)
 
         if val:
             for v in val:
-                yield self._get_sub_config_from_value(v, is_nested)
+                yield self._get_sub_config_from_value(v, base)
         elif self.__base_config:
-            return self.__base_config.get_multi_sub_config(name, is_nested=is_nested, required=required)
+            for v in self.__base_config._get_multi_sub_config(name, required=required, base=base):
+                yield v
         elif required:
             raise ValueError(f"Sub-config '{name}' was not found!")
-        else:
-            return
 
-    def get_sub_config(self, name: str, is_nested = False, required = False) -> "ConfigurationPart":
+            
+    def get_multi_sub_config(self, name: str, is_nested = False, required = False) -> typing.Generator["ConfigurationPart", None, None]:
+        b = self if is_nested else None
+
+        return self._get_multi_sub_config(name, required=required, base=b)
+
+    def _get_sub_config(self, name: str, required = False, base: "ConfigurationPart" = None) -> "ConfigurationPart":
         val = self.__args.get(name)
+        
+        if self.__base_config:
+            base_sub = self.__base_config._get_sub_config(name, required=required, base=base)
+        else:
+            base_sub = base
 
         if val:
-            return self._get_sub_config_from_value(val, is_nested)
+            return self._get_sub_config_from_value(val, base_sub_config=base_sub)
         elif self.__base_config:
-            return self.__base_config.get_sub_config(name, is_nested=is_nested, required=required)
+            return base_sub
         elif required:
             raise ValueError(f"Sub-config '{name}' was not found!")
         else:
-            return empty()
+            return base or empty()
+
+    def get_sub_config(self, name: str, is_nested = False, required = False) -> "ConfigurationPart":
+        b = self if is_nested else empty()
+
+        return self._get_sub_config(name, required=required, base=b)
 
 def from_file(path: str, base_config: ConfigurationPart = None, options: ConfigurationOptions = None) -> ConfigurationPart:
     if not options:
