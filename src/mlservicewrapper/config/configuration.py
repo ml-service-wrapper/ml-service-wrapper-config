@@ -1,9 +1,10 @@
 import argparse
 import json
 import os
+import pathlib
 import typing
 
-__all__ = ["Configuration", "ConfigurationOptions", "from_file", "from_args"]
+__all__ = ["ConfigurationPart", "ConfigurationOptions", "from_file", "from_args"]
 
 class ConfigurationOptions:
     @classmethod
@@ -25,8 +26,8 @@ class ConfigurationOptions:
 
 GetValueType = typing.TypeVar("GetValueType")
 
-class Configuration:
-    def __init__(self, vals: dict, root_dir: str, base_config: "Configuration" = None, options: ConfigurationOptions = None):
+class ConfigurationPart:
+    def __init__(self, vals: dict, root_dir: str, base_config: "ConfigurationPart" = None, options: ConfigurationOptions = None):
         self.__args = vals
         self.__dir = root_dir
         self.__base_config = base_config
@@ -74,7 +75,10 @@ class Configuration:
         if dir_name:
             root_dir = os.path.join(root_dir, dir_name)
 
-        return os.path.join(root_dir, file_name)
+        s = os.path.join(root_dir, file_name)
+        s = os.path.realpath(s)
+
+        return pathlib.Path(s)
 
     def get_fully_qualified_path(self, file_name_name: str, dir_name_name: str = None, required = False) -> os.PathLike or None:
 
@@ -89,7 +93,7 @@ class Configuration:
         else:
             return None
 
-    def _get_sub_config_from_value(self, val: dict or str, is_nested = False) -> "Configuration":
+    def _get_sub_config_from_value(self, val: dict or str, is_nested = False) -> "ConfigurationPart":
         base_config = self if is_nested else None
 
         if isinstance(val, str):
@@ -97,11 +101,11 @@ class Configuration:
 
             return from_file(path, base_config, options=self.__options)
         elif isinstance(val, dict):
-            return Configuration(val, self.__dir, self.__base_config)
+            return ConfigurationPart(val, self.__dir, self.__base_config)
         else:
             raise ValueError()
 
-    def get_multi_sub_config(self, name: str, is_nested = False, required = False) -> typing.Generator["Configuration", None, None]:
+    def get_multi_sub_config(self, name: str, is_nested = False, required = False) -> typing.Generator["ConfigurationPart", None, None]:
         val = self.__args.get(name)
 
         if val:
@@ -114,7 +118,7 @@ class Configuration:
         else:
             return
 
-    def get_sub_config(self, name: str, is_nested = False, required = False) -> typing.Union["Configuration", None]:
+    def get_sub_config(self, name: str, is_nested = False, required = False) -> typing.Union["ConfigurationPart", None]:
         val = self.__args.get(name)
 
         if val:
@@ -126,7 +130,7 @@ class Configuration:
         else:
             return None
 
-def from_file(path: str, base_config: Configuration = None, options: ConfigurationOptions = None) -> Configuration:
+def from_file(path: str, base_config: ConfigurationPart = None, options: ConfigurationOptions = None) -> ConfigurationPart:
     if not options:
         options = ConfigurationOptions.default()
     
@@ -155,9 +159,9 @@ def from_file(path: str, base_config: Configuration = None, options: Configurati
         if relative_root:
             dir_name = os.path.join(dir_name, relative_root)
 
-    return Configuration(config_dict, dir_name, base_config, options)
+    return ConfigurationPart(config_dict, dir_name, base_config, options)
 
-def from_args(args: argparse.Namespace, options: ConfigurationOptions = None) -> Configuration:
+def from_args(args: argparse.Namespace, options: ConfigurationOptions = None) -> ConfigurationPart:
     if not options:
         options = ConfigurationOptions.default()
     
@@ -169,6 +173,6 @@ def from_args(args: argparse.Namespace, options: ConfigurationOptions = None) ->
         if config_path:
             base_config = from_file(config_path, options=options)
 
-    config = Configuration(vars(args), ".", base_config, options)
+    config = ConfigurationPart(vars(args), ".", base_config, options)
 
     return config
